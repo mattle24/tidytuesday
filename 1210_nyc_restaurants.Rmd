@@ -20,6 +20,7 @@ library(janitor)
 library(ggplot2)
 library(mattle24utils)
 library(extrafont)
+library(ggridges)
 library(ipumsr)
 library(sf)
 ```
@@ -63,8 +64,6 @@ clean_cuisine <- nyc %>%
   ungroup() %>% 
   top_n(-10, wt = mn) 
 
-clean_cuisine
-
 dirty_cuisine <- nyc %>% 
   filter(!is.na(score)) %>% 
   mutate(cuisine_description = ifelse(cuisine_description == 'Pizza/Italian', 'Pizza', cuisine_description)) %>% 
@@ -79,35 +78,20 @@ clean_dirty_food <- nyc %>%
     nyc %>% 
       inner_join(dirty_cuisine, by = 'cuisine_description')
   )
+
+head(clean_dirty_food)
 ```
 
-```{r}
-ggplot(clean_dirty_food, aes(x = reorder(cuisine_description, desc(cuisine_description)), y = score)) + 
-  # geom_rect(aes(xmin = min(CUISINE.DESCRIPTION),
-  #           xmax = max(CUISINE.DESCRIPTION)),
-  #           ymin = 0, ymax = 14, fill = 'green') +
-  # geom_rect(aes(xmin = min(CUISINE.DESCRIPTION),
-  #           xmax = max(CUISINE.DESCRIPTION)),
-  #           ymin = 14, ymax = 27, fill = 'purple') +
-  # geom_rect(aes(xmin = min(CUISINE.DESCRIPTION),
-  #           xmax = max(CUISINE.DESCRIPTION)),
-  #           ymin = 27, ymax = 50, fill = 'red') +
-  geom_boxplot(fill = quick_color('light_blue')) +
-  labs(
-    x = 'Cuisine Type'
-    ,y = 'DoH Score'
-  ) +
-  coord_flip()
-```
+Looking at the distribution of scores. 
 
 ```{r}
-library(ggridges)
-
 ggplot(clean_dirty_food, aes(y = reorder(cuisine_description, mn), x = score)) + 
   geom_density_ridges_gradient(aes(fill = score)) +
   geom_point(aes(x = mn)) +
   scale_x_continuous(limits = c(0, 50))
 ```
+
+Even looking at the best and worst categories, it was difficult to make much of a distinction. 
 
 ## Scores by geography
 
