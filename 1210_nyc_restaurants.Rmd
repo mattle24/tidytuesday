@@ -1,0 +1,158 @@
+---
+title: "NYC Restaurants"
+author: "Matt Lehman"
+date: "12/13/2018"
+date: "`r format(Sys.time(), '%b %d, %Y')`"
+output:
+  html_document:
+    fig_height: 4
+    theme: yeti
+    highlight: pygments
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+# Setup 
+
+```{r packages}
+library(readr)
+library(dplyr)
+library(janitor)
+library(ggplot2)
+library(mattle24utils)
+library(extrafont)
+library(ipumsr)
+library(sf)
+```
+
+```{r}
+theme_set(theme_mattle24())
+```
+
+
+### Data
+
+```{r data}
+nyc <- read_csv("https://data.cityofnewyork.us/api/views/43nn-pn8j/rows.csv")
+
+nyc <- nyc %>% 
+  janitor::clean_names()
+```
+
+# Analysis
+
+## Grades by Restaurant Type
+
+```{r}
+nyc %>% 
+  count(cuisine_description, sort = T) %>% 
+  filter(n < 50)
+```
+
+There are 85 different food cuisine descriptions, although some are very niche. Six categories have fewer than fifty inspections. 
+
+For this analysis, I will look at the cuisines best and worst mean scores.
+
+```{r}
+# We have Italian, pizza, and pizza/ Italian. I want to coalesce, will 
+# turn all pizza/ Italian to pizza
+clean_cuisine <- nyc %>% 
+  filter(!is.na(score)) %>% 
+  mutate(cuisine_description = ifelse(cuisine_description == 'Pizza/Italian', 'Pizza', cuisine_description)) %>% 
+  group_by(cuisine_description) %>% 
+  summarise(mn = mean(score)) %>% 
+  ungroup() %>% 
+  top_n(-10, wt = mn) 
+
+clean_cuisine
+
+dirty_cuisine <- nyc %>% 
+  filter(!is.na(score)) %>% 
+  mutate(cuisine_description = ifelse(cuisine_description == 'Pizza/Italian', 'Pizza', cuisine_description)) %>% 
+  group_by(cuisine_description) %>% 
+  summarise(mn = mean(score)) %>% 
+  ungroup() %>% 
+  top_n(10, wt = mn) 
+
+clean_dirty_food <- nyc %>% 
+  inner_join(clean_cuisine, by = 'cuisine_description') %>% 
+  bind_rows(
+    nyc %>% 
+      inner_join(dirty_cuisine, by = 'cuisine_description')
+  )
+```
+
+```{r}
+ggplot(clean_dirty_food, aes(x = reorder(cuisine_description, desc(cuisine_description)), y = score)) + 
+  # geom_rect(aes(xmin = min(CUISINE.DESCRIPTION),
+  #           xmax = max(CUISINE.DESCRIPTION)),
+  #           ymin = 0, ymax = 14, fill = 'green') +
+  # geom_rect(aes(xmin = min(CUISINE.DESCRIPTION),
+  #           xmax = max(CUISINE.DESCRIPTION)),
+  #           ymin = 14, ymax = 27, fill = 'purple') +
+  # geom_rect(aes(xmin = min(CUISINE.DESCRIPTION),
+  #           xmax = max(CUISINE.DESCRIPTION)),
+  #           ymin = 27, ymax = 50, fill = 'red') +
+  geom_boxplot(fill = quick_color('light_blue')) +
+  labs(
+    x = 'Cuisine Type'
+    ,y = 'DoH Score'
+  ) +
+  coord_flip()
+```
+
+```{r}
+library(ggridges)
+
+ggplot(clean_dirty_food, aes(y = reorder(cuisine_description, mn), x = score)) + 
+  geom_density_ridges_gradient(aes(fill = score)) +
+  geom_point(aes(x = mn)) +
+  scale_x_continuous(limits = c(0, 50))
+```
+
+## Scores by geography
+
+The dataset gives the scores at the zip code level. Using a GIS file from
+IPUMS NHGIS, I can plot this. The GIS file is 5-digit zip from 2016. 
+
+```{r read zip shp}
+# assume the nhgis zip file is in a data subdirectory, name has to be adjusted 
+# for each download
+zip_shp <- read_ipums_sf(shape_file = "data/nhgis0043_shape.zip")
+```
+
+#### Plot the Map
+
+```{r plot zip map}
+zip_data_shp <- nyc %>% 
+  mutate(zipcode = as.character(zipcode)) %>% 
+  group_by(zipcode) %>% 
+  summarise(mn = mean(score, na.rm = T)) %>% 
+  ungroup() %>% 
+  inner_join(zip_shp, by = c('zipcode' = 'ZCTA5CE10'))
+
+zip_plot <- ggplot(zip_data_shp) +
+  geom_sf(aes(fill = mn), color = NA) +
+  scale_fill_gradient2(name = 'Mean Score', low = 'white', mid = '#CC4E4E', high = '#8B2323', 
+                        midpoint = mean(zip_data_shp$mn),
+                        breaks = c(0, 14, 28), labels = c('A', 'B', 'C'), limits = c(0, 29), 
+                        guide = guide_colorbar(ticks = FALSE, frame.colour = 'gray20')) +
+  labs(
+    title = "Restaurant Inspection Grades"
+    ,subtitle = "Average Score by Zipcode"
+    ,x = NULL
+    ,y = NULL
+  ) +
+  theme(panel.background = element_rect(fill = 'gray20')) +
+  coord_sf(datum = NA) +
+  NULL
+
+zip_plot
+```
+
+```{r include = F}
+ggsave(zip_plot, filename = 'plots/nyc_restaurants.png', dpi = 320,
+       width = 4, height = 6, units = "in")
+```
+
+
