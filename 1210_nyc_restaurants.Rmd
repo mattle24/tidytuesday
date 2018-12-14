@@ -1,7 +1,6 @@
 ---
 title: "NYC Restaurants"
 author: "Matt Lehman"
-date: "12/13/2018"
 date: "`r format(Sys.time(), '%b %d, %Y')`"
 output:
   html_document:
